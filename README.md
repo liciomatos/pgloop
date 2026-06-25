@@ -24,6 +24,24 @@ Total: 2 issue(s)  1 CRITICAL  1 WARN
 
 ---
 
+## Compatibility
+
+| OS | Architecture | Supported |
+|---|---|---|
+| Linux | x86-64 (amd64) | ✅ |
+| Linux | ARM64 | ✅ |
+| macOS | x86-64 (Intel) | ✅ |
+| macOS | ARM64 (Apple Silicon) | ✅ |
+| Windows | any | ❌ |
+
+Windows is not supported. pgloop depends on [`pg_query_go`](https://github.com/pganalyze/pg_query_go), which is a CGO binding to `libpg_query` (the actual PostgreSQL parser written in C). Cross-compiling CGO for Windows requires a full MinGW toolchain and is not part of the build pipeline. If Windows support matters to you, open an issue — a pure-Go PostgreSQL parser would be the path forward.
+
+**Minimum requirements to build from source:**
+- Go 1.22+
+- GCC (Linux: `apt install gcc` / macOS: Xcode Command Line Tools via `xcode-select --install`)
+
+---
+
 ## Installation
 
 ```bash
