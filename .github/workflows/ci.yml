@@ -45,10 +45,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -67,28 +66,32 @@ jobs:
             echo "value=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
-      - uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --split --clean
+      - name: Build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.value }}
+          VERSION: ${{ steps.tag.outputs.value }}
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 \
+            go build -ldflags "-X main.version=${VERSION}" -o dist/pgloop_linux_amd64 .
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc \
+            go build -ldflags "-X main.version=${VERSION}" -o dist/pgloop_linux_arm64 .
+          cd dist
+          tar czf pgloop_${VERSION}_linux_amd64.tar.gz pgloop_linux_amd64
+          tar czf pgloop_${VERSION}_linux_arm64.tar.gz pgloop_linux_arm64
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-linux
-          path: dist/
+          path: dist/*.tar.gz
 
   build-macos:
     name: Build macOS binaries
     needs: test
     runs-on: macos-15
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
@@ -104,51 +107,58 @@ jobs:
             echo "value=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
-      - uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: release --split --clean
+      - name: Build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.value }}
+          VERSION: ${{ steps.tag.outputs.value }}
+        run: |
+          mkdir -p dist
+          # arm64: native on Apple Silicon runner
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 \
+            go build -ldflags "-X main.version=${VERSION}" -o dist/pgloop_darwin_arm64 .
+          # amd64: Apple clang supports -arch x86_64 cross-compilation
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 CC="cc -arch x86_64" \
+            go build -ldflags "-X main.version=${VERSION}" -o dist/pgloop_darwin_amd64 .
+          cd dist
+          tar czf pgloop_${VERSION}_darwin_arm64.tar.gz pgloop_darwin_arm64
+          tar czf pgloop_${VERSION}_darwin_amd64.tar.gz pgloop_darwin_amd64
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist-macos
-          path: dist/
+          path: dist/*.tar.gz
 
   release:
     name: Release
     needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
+      - name: Set release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "value=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
 
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - name: Set release tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "value=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "value=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          fi
+      - name: Generate checksums
+        run: sha256sum dist/*.tar.gz > dist/checksums.txt
 
-      - uses: goreleaser/goreleaser-action@v7
-        with:
-          version: '~> v2'
-          args: continue --merge --clean
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ steps.tag.outputs.value }} \
+            --title "pgloop ${{ steps.tag.outputs.value }}" \
+            --generate-notes \
+            dist/*.tar.gz dist/checksums.txt
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.tag.outputs.value }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
