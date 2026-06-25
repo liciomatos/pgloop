@@ -180,41 +180,100 @@ ALTER TABLE users DROP CONSTRAINT chk_email_nn;
 
 pgloop reads a config file automatically — no flag required. It searches in two locations, in order:
 
-1. `.pgloop.yaml` in the **current working directory** (project-level config, commit to your repo)
-2. `~/.config/pgloop/.pgloop.yaml` (user-level config, applies to all projects)
+1. `.pgloop.yaml` in the **current working directory** (project-level config — commit this to your repo)
+2. `~/.config/pgloop/.pgloop.yaml` (user-level config — applies to all projects on your machine)
 
-CLI flags always take precedence over the config file, so you can override any setting per-run.
+CLI flags always take precedence over the config file, so you can override any setting per-run without editing the file.
 
-### Full reference
+### Full annotated config
 
 ```yaml
+# ──────────────────────────────────────────────────────────────────────────────
+# pgloop.yaml — project or user-level configuration
+# Place at the root of your project (.pgloop.yaml) or at ~/.config/pgloop/.pgloop.yaml
+# CLI flags always override these values.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+# ── lint ──────────────────────────────────────────────────────────────────────
+# Settings for `pgloop lint`. All of these map 1:1 to CLI flags.
 lint:
   # Target PostgreSQL major version.
-  # Affects how certain patterns are classified — most notably P1:
-  #   - PG10 or earlier: ADD COLUMN with DEFAULT is CRITICAL (full table rewrite)
-  #   - PG11+:           ADD COLUMN with DEFAULT is WARN   (fast column add, no rewrite)
-  # Set this to match the PostgreSQL version you deploy against.
-  # Default: 0 (unspecified — conservative mode, assumes PG10)
+  # This affects how version-sensitive patterns are classified. Currently impacts P1:
+  #   PG10 or earlier → ADD COLUMN with DEFAULT is CRITICAL (causes a full table rewrite)
+  #   PG11+           → ADD COLUMN with DEFAULT is WARN    (fast column add, no rewrite,
+  #                                                          but still acquires ACCESS EXCLUSIVE briefly)
+  # Set this to the major version you actually deploy against.
+  # 0 = unspecified: conservative mode — assumes PG10 (safest default).
+  # Equivalent CLI flag: --pg-version
   pg_version: 14
 
-  # Minimum risk level that causes pgloop to exit with code 2.
-  # CRITICAL  → only critical issues fail the build (default)
-  # WARN      → any issue (including warnings) fails the build
-  # Default: CRITICAL
+  # Minimum risk level that causes `pgloop lint` to exit with code 2 (build failure).
+  # CRITICAL  → exit 2 only when at least one CRITICAL issue is found (default)
+  # WARN      → exit 2 for any issue, including warnings
+  # In both cases, exit code 1 means only warnings were found; 0 means clean.
+  # Equivalent CLI flag: --fail-on
   fail_on: CRITICAL
 
-  # Show safe rewrite recipes after each issue in terminal output.
-  # Set to false for compact output (useful in scripts or log pipelines).
-  # Only affects the terminal format; JSON and github always include suggestions.
-  # Default: true
+  # Whether to print safe rewrite recipes below each issue in terminal output.
+  # Recipes show the step-by-step SQL to fix the pattern without causing downtime.
+  # Set to false for compact output (e.g. in log pipelines or noisy CI environments).
+  # Note: JSON and github formats always include suggestions regardless of this setting.
+  # Equivalent CLI flag: --suggestions
   suggestions: true
 
-  # Suppress specific patterns globally.
-  # Accepts a list of pattern codes (P1–P10).
-  # Useful when a pattern is intentionally accepted across your entire project
-  # (e.g. P9 if your deploy tool already injects lock_timeout automatically).
-  # Default: []
+  # Patterns to suppress globally across all migrations in this project.
+  # Accepts a list of pattern codes (P1–P10). Run `pgloop patterns` to see all codes.
+  # Use this when a pattern is intentionally accepted project-wide — for example:
+  #   [P9]      → your deploy tool (Flyway, Liquibase, etc.) already injects lock_timeout
+  #   [P6]      → your team has a documented RENAME strategy and accepts the warning
+  #   [P9, P10] → suppress both timeout and multi-exclusive warnings
+  # To suppress a pattern for a single run only, prefer the CLI flag: --ignore P9
+  # Default: [] (nothing suppressed)
   ignore: []
+
+
+# ── profiles (coming in v0.2) ─────────────────────────────────────────────────
+# Connection profiles for commands that require a live database (e.g. `pgloop apply`,
+# `pgloop explain`, `pgloop seed`). Not used by `pgloop lint`, which is fully static.
+#
+# default_profile: dev
+#
+# profiles:
+#   dev:
+#     host: localhost
+#     port: 5432
+#     database: myapp_dev
+#     user: postgres
+#     # password: "" — prefer PGPASSWORD env var or .pgpass file
+#     ssl_mode: disable   # disable | require | verify-ca | verify-full
+#
+#   staging:
+#     host: staging-db.internal
+#     port: 5432
+#     database: myapp
+#     user: myapp_readonly
+#     ssl_mode: require
+#
+#   prod:
+#     host: prod-db.internal
+#     port: 5432
+#     database: myapp
+#     user: myapp_readonly
+#     ssl_mode: verify-full
+#     read_only: true     # blocks accidental writes when using pgloop against prod
+
+
+# ── apply (coming in v0.2) ────────────────────────────────────────────────────
+# Settings for `pgloop apply` — runs a migration safely against a live database,
+# injecting timeouts automatically and rolling back on any lock acquisition failure.
+#
+# apply:
+#   lock_timeout: 3s        # abort if a lock cannot be acquired within this duration
+#   statement_timeout: 30s  # abort if any single statement takes longer than this
+#   dry_run: false          # when true, prints what would run without executing it
+#   retries: 3              # number of retry attempts on lock timeout before giving up
+#   retry_delay: 5s         # wait between retries
 ```
 
 ### Common setups
@@ -226,30 +285,75 @@ lint:
   fail_on: WARN
 ```
 
-**Suppress timeout warning — deploy tool handles it:**
+**Suppress P9 — deploy tool already injects timeouts:**
 ```yaml
 lint:
   pg_version: 15
   ignore: [P9]
 ```
 
-**Compact CI output without suggestions:**
+**Compact CI output, no rewrite recipes:**
 ```yaml
 lint:
   suggestions: false
   fail_on: CRITICAL
 ```
 
+**Full team config — multiple environments:**
+```yaml
+lint:
+  pg_version: 16
+  fail_on: CRITICAL
+  suggestions: true
+  ignore: [P9]       # Flyway injects lock_timeout via beforeMigrate callback
+
+# profiles:         # uncomment when pgloop apply ships (v0.2)
+#   dev:
+#     host: localhost
+#     port: 5432
+#     database: myapp_dev
+#     user: postgres
+#   prod:
+#     host: prod-db.internal
+#     port: 5432
+#     database: myapp
+#     user: myapp_readonly
+#     ssl_mode: verify-full
+#     read_only: true
+```
+
 ### Parameter reference
+
+#### `lint`
+
+| Key | Type | Default | CLI flag | Description |
+|---|---|---|---|---|
+| `lint.pg_version` | integer | `0` | `--pg-version` | Target PostgreSQL major version. `0` = unspecified (assumes PG10). |
+| `lint.fail_on` | string | `CRITICAL` | `--fail-on` | Exit code 2 threshold: `CRITICAL` or `WARN`. |
+| `lint.suggestions` | bool | `true` | `--suggestions` | Show rewrite recipes in terminal output. |
+| `lint.ignore` | list | `[]` | `--ignore` | Pattern codes to suppress globally (e.g. `[P9, P10]`). |
+
+#### `profiles` _(v0.2)_
+
+| Key | Type | Description |
+|---|---|---|
+| `default_profile` | string | Profile used when no `--profile` flag is given. |
+| `profiles.<name>.host` | string | Database host. |
+| `profiles.<name>.port` | integer | Database port (default: `5432`). |
+| `profiles.<name>.database` | string | Database name. |
+| `profiles.<name>.user` | string | Database user. |
+| `profiles.<name>.ssl_mode` | string | `disable`, `require`, `verify-ca`, or `verify-full`. |
+| `profiles.<name>.read_only` | bool | Block accidental writes when connecting to this profile. |
+
+#### `apply` _(v0.2)_
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `lint.pg_version` | integer | `0` | Target PostgreSQL major version. `0` = unspecified (assumes PG10). |
-| `lint.fail_on` | string | `CRITICAL` | Exit code 2 threshold: `CRITICAL` or `WARN`. |
-| `lint.suggestions` | bool | `true` | Show rewrite recipes in terminal output. |
-| `lint.ignore` | list | `[]` | Pattern codes to suppress (e.g. `[P9, P10]`). |
-
-CLI flags always take precedence over the config file.
+| `apply.lock_timeout` | duration | `3s` | Abort if a lock cannot be acquired within this duration. |
+| `apply.statement_timeout` | duration | `30s` | Abort if any single statement exceeds this duration. |
+| `apply.dry_run` | bool | `false` | Print what would run without executing it. |
+| `apply.retries` | integer | `3` | Retry attempts on lock timeout before giving up. |
+| `apply.retry_delay` | duration | `5s` | Wait between retries. |
 
 ---
 
