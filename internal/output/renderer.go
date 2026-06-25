@@ -7,15 +7,15 @@ import (
 	"github.com/liciomatos/pgloop/internal/lockmapper"
 )
 
-// Renderer formata e escreve resultados de lint para um destino específico.
+// Renderer formats and writes lint results to a specific destination.
 type Renderer interface {
-	// Render escreve os resultados no destino configurado.
-	// Retorna erro apenas em falhas de I/O (ex: encode JSON falha).
+	// Render writes results to the configured destination.
+	// Returns an error only on I/O failures (e.g. JSON encode fails).
 	Render(file string, results []lockmapper.LintResult) error
 }
 
-// NewRenderer retorna o Renderer correspondente ao formato solicitado.
-// showSuggestions só tem efeito no formato "terminal".
+// NewRenderer returns the Renderer for the requested format.
+// showSuggestions only has effect for the "terminal" format.
 func NewRenderer(format string, showSuggestions bool) (Renderer, error) {
 	switch strings.ToLower(format) {
 	case "terminal", "":
@@ -25,7 +25,7 @@ func NewRenderer(format string, showSuggestions bool) (Renderer, error) {
 	case "github":
 		return &gitHubRenderer{}, nil
 	default:
-		return nil, fmt.Errorf("formato desconhecido %q: use terminal, json ou github", format)
+		return nil, fmt.Errorf("unknown format %q: use terminal, json, or github", format)
 	}
 }
 

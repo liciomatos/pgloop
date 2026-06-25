@@ -12,7 +12,7 @@ import (
 
 var defaultOpts = lockmapper.AnalyzeOptions{}
 
-// patternCase verifica que uma migration dispara um padrão específico.
+// patternCase verifies that a migration triggers a specific pattern.
 type patternCase struct {
 	file          string
 	opts          lockmapper.AnalyzeOptions
@@ -22,7 +22,7 @@ type patternCase struct {
 }
 
 var patternCases = []patternCase{
-	// Padrões version-independent
+	// Version-independent patterns
 	{
 		file: "02_create_index_no_concurrently.sql", opts: defaultOpts,
 		wantPattern: lockmapper.PatternCreateIndexNoConcurrently, wantRisk: lockmapper.RiskCritical, wantMinIssues: 1,
@@ -59,7 +59,7 @@ var patternCases = []patternCase{
 		file: "10_multiple_exclusive.sql", opts: defaultOpts,
 		wantPattern: lockmapper.PatternMultipleExclusive, wantRisk: lockmapper.RiskWarn, wantMinIssues: 1,
 	},
-	// P1 — ADD COLUMN com DEFAULT: comportamento muda por versão do PG
+	// P1 — ADD COLUMN with DEFAULT: behavior changes by PG version
 	{
 		file: "01_add_column_with_default.sql", opts: lockmapper.AnalyzeOptions{PGVersion: 0},
 		wantPattern: lockmapper.PatternAddColumnWithDefault, wantRisk: lockmapper.RiskCritical, wantMinIssues: 1,
@@ -132,14 +132,14 @@ func TestSafeMigrationsNoFalsePositives(t *testing.T) {
 			results := lockmapper.Analyze(stmts, sql, defaultOpts)
 			for _, r := range results {
 				if r.Risk == lockmapper.RiskCritical {
-					t.Errorf("false positive CRITICAL (P%d) em %s: %s", r.Pattern, file, r.Message)
+					t.Errorf("false positive CRITICAL (P%d) in %s: %s", r.Pattern, file, r.Message)
 				}
 			}
 		})
 	}
 }
 
-// TestAddColumnWithDefaultPG11IsWarnNotCritical valida explicitamente o fix do P1.
+// TestAddColumnWithDefaultPG11IsWarnNotCritical explicitly validates the P1 fix.
 func TestAddColumnWithDefaultPG11IsWarnNotCritical(t *testing.T) {
 	sql := "ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';"
 	stmts, _ := parser.ParseStatements(sql)
@@ -149,12 +149,12 @@ func TestAddColumnWithDefaultPG11IsWarnNotCritical(t *testing.T) {
 
 	for _, r := range pg11Results {
 		if r.Pattern == lockmapper.PatternAddColumnWithDefault && r.Risk == lockmapper.RiskCritical {
-			t.Error("PG11: ADD COLUMN com DEFAULT deve ser WARN, não CRITICAL")
+			t.Error("PG11: ADD COLUMN with DEFAULT must be WARN, not CRITICAL")
 		}
 	}
 	for _, r := range pg10Results {
 		if r.Pattern == lockmapper.PatternAddColumnWithDefault && r.Risk == lockmapper.RiskWarn {
-			t.Error("PG10: ADD COLUMN com DEFAULT deve ser CRITICAL, não WARN")
+			t.Error("PG10: ADD COLUMN with DEFAULT must be CRITICAL, not WARN")
 		}
 	}
 }
@@ -162,16 +162,16 @@ func TestAddColumnWithDefaultPG11IsWarnNotCritical(t *testing.T) {
 func TestEmptySQL(t *testing.T) {
 	stmts, err := parser.ParseStatements("")
 	if err != nil {
-		t.Fatalf("SQL vazio não deve gerar erro de parse: %v", err)
+		t.Fatalf("empty SQL must not produce a parse error: %v", err)
 	}
 	results := lockmapper.Analyze(stmts, "", defaultOpts)
 	if len(results) != 0 {
-		t.Errorf("SQL vazio não deve gerar resultados, got %d", len(results))
+		t.Errorf("empty SQL must produce no results, got %d", len(results))
 	}
 }
 
 func TestMultiCmdAlterTable(t *testing.T) {
-	// Uma única instrução ALTER TABLE com dois comandos perigosos.
+	// A single ALTER TABLE statement with two dangerous commands.
 	sql := `SET lock_timeout = '3s';
 ALTER TABLE orders
     ADD COLUMN status TEXT DEFAULT 'pending',
@@ -189,10 +189,10 @@ ALTER TABLE orders
 	}
 
 	if !patterns[lockmapper.PatternAddColumnWithDefault] {
-		t.Error("esperado P1 (ADD COLUMN com DEFAULT) em ALTER TABLE multi-cmd")
+		t.Error("expected P1 (ADD COLUMN with DEFAULT) in multi-cmd ALTER TABLE")
 	}
 	if !patterns[lockmapper.PatternDropColumn] {
-		t.Error("esperado P4 (DROP COLUMN) em ALTER TABLE multi-cmd")
+		t.Error("expected P4 (DROP COLUMN) in multi-cmd ALTER TABLE")
 	}
 }
 

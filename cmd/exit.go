@@ -2,7 +2,7 @@ package cmd
 
 import "fmt"
 
-// ExitError carrega o exit code da análise sem imprimir mensagem adicional.
+// ExitError carries the lint exit code without printing an additional message.
 type ExitError struct {
 	Code int
 }

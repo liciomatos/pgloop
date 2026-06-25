@@ -36,36 +36,36 @@ const (
 	PatternMultipleExclusive         PatternID = 10
 )
 
-// AnalyzeOptions controla o comportamento da análise.
+// AnalyzeOptions controls analysis behavior.
 type AnalyzeOptions struct {
-	// PGVersion é a versão major do PostgreSQL alvo (ex: 14).
-	// 0 = não especificada: usa comportamento conservador (assume PG10).
+	// PGVersion is the target PostgreSQL major version (e.g. 14).
+	// 0 = unspecified: uses conservative behavior (assumes PG10).
 	PGVersion int
 }
 
-// PatternInfo descreve um padrão detectável pelo lint.
+// PatternInfo describes a pattern detectable by the linter.
 type PatternInfo struct {
 	ID          PatternID
-	Code        string   // ex: "P1" — usado em --ignore
-	Name        string   // nome curto do padrão
-	LockMode    LockMode // lock adquirido pelo statement
+	Code        string   // e.g. "P1" — used with --ignore
+	Name        string   // short pattern name
+	LockMode    LockMode // lock acquired by the statement
 	Risk        RiskLevel
-	VersionNote string // nota sobre comportamento diferente por versão do PG
+	VersionNote string // note about version-specific behavior
 }
 
-// AllPatterns retorna todos os padrões suportados, na ordem de ID.
+// AllPatterns returns all supported patterns in ID order.
 func AllPatterns() []PatternInfo {
 	return []PatternInfo{
-		{PatternAddColumnWithDefault, "P1", "ADD COLUMN com DEFAULT", LockAccessExclusive, RiskCritical, "WARN em PG11+"},
-		{PatternCreateIndexNoConcurrently, "P2", "CREATE INDEX sem CONCURRENTLY", LockShare, RiskCritical, ""},
-		{PatternAddConstraintNoNotValid, "P3", "ADD CONSTRAINT sem NOT VALID", LockAccessExclusive, RiskCritical, ""},
+		{PatternAddColumnWithDefault, "P1", "ADD COLUMN with DEFAULT", LockAccessExclusive, RiskCritical, "WARN on PG11+"},
+		{PatternCreateIndexNoConcurrently, "P2", "CREATE INDEX without CONCURRENTLY", LockShare, RiskCritical, ""},
+		{PatternAddConstraintNoNotValid, "P3", "ADD CONSTRAINT without NOT VALID", LockAccessExclusive, RiskCritical, ""},
 		{PatternDropColumn, "P4", "DROP COLUMN", LockAccessExclusive, RiskCritical, ""},
-		{PatternSetNotNull, "P5", "SET NOT NULL sem check constraint prévia", LockAccessExclusive, RiskCritical, ""},
+		{PatternSetNotNull, "P5", "SET NOT NULL without prior check constraint", LockAccessExclusive, RiskCritical, ""},
 		{PatternRenameTableColumn, "P6", "RENAME TABLE / RENAME COLUMN", LockAccessExclusive, RiskWarn, ""},
 		{PatternAlterColumnType, "P7", "ALTER COLUMN TYPE", LockAccessExclusive, RiskCritical, ""},
 		{PatternTruncate, "P8", "TRUNCATE", LockAccessExclusive, RiskCritical, ""},
-		{PatternNoTimeout, "P9", "Migration sem lock_timeout / statement_timeout", LockNone, RiskWarn, ""},
-		{PatternMultipleExclusive, "P10", "Múltiplas operações EXCLUSIVE na mesma migration", LockAccessExclusive, RiskWarn, ""},
+		{PatternNoTimeout, "P9", "Migration without lock_timeout / statement_timeout", LockNone, RiskWarn, ""},
+		{PatternMultipleExclusive, "P10", "Multiple ACCESS EXCLUSIVE operations in the same migration", LockAccessExclusive, RiskWarn, ""},
 	}
 }
 
@@ -74,10 +74,10 @@ type LintResult struct {
 	LockMode   LockMode
 	Risk       RiskLevel
 	Pattern    PatternID
-	Message    string // descrição do problema
-	Suggestion string // receita de reescrita segura (preenchida pelo cmd via rewriter)
+	Message    string // issue description
+	Suggestion string // safe rewrite recipe (populated by cmd via rewriter)
 	Line       int
-	Synthetic  bool // true para P9/P10: diagnóstico de arquivo, não de um statement específico
+	Synthetic  bool // true for P9/P10: file-level diagnostic, not tied to a specific statement
 }
 
 func Analyze(stmts []parser.Statement, sql string, opts AnalyzeOptions) []LintResult {
@@ -98,7 +98,7 @@ func Analyze(stmts []parser.Statement, sql string, opts AnalyzeOptions) []LintRe
 			LockMode:  LockNone,
 			Risk:      RiskWarn,
 			Pattern:   PatternNoTimeout,
-			Message:   "Migration sem lock_timeout ou statement_timeout. Use pgloop apply para injetar automaticamente.",
+			Message:   "Migration has no lock_timeout or statement_timeout. Use pgloop apply to inject them automatically.",
 			Line:      1,
 			Synthetic: true,
 		})
@@ -109,7 +109,7 @@ func Analyze(stmts []parser.Statement, sql string, opts AnalyzeOptions) []LintRe
 			LockMode:  LockAccessExclusive,
 			Risk:      RiskWarn,
 			Pattern:   PatternMultipleExclusive,
-			Message:   "Múltiplas operações ACCESS EXCLUSIVE na mesma migration. Quebre em migrations separadas.",
+			Message:   "Multiple ACCESS EXCLUSIVE operations in the same migration. Split into separate migrations.",
 			Synthetic: true,
 		})
 	}
@@ -117,9 +117,9 @@ func Analyze(stmts []parser.Statement, sql string, opts AnalyzeOptions) []LintRe
 	return results
 }
 
-// analyzeStatement retorna zero ou mais problemas para um único statement SQL.
-// ALTER TABLE pode ter múltiplos comandos (ADD COLUMN, DROP COLUMN, etc.) na mesma instrução,
-// então delega para analyzeAlterTable que retorna uma lista completa.
+// analyzeStatement returns zero or more issues for a single SQL statement.
+// ALTER TABLE can contain multiple commands (ADD COLUMN, DROP COLUMN, etc.) in one statement,
+// so it delegates to analyzeAlterTable which returns a complete list.
 func analyzeStatement(stmt parser.Statement, fullSQL string, opts AnalyzeOptions) []LintResult {
 	node := stmt.Node
 	line := lineOf(fullSQL, stmt.Position)
@@ -139,7 +139,7 @@ func analyzeStatement(stmt parser.Statement, fullSQL string, opts AnalyzeOptions
 			LockMode:  LockAccessExclusive,
 			Risk:      RiskWarn,
 			Pattern:   PatternRenameTableColumn,
-			Message:   "RENAME bloqueia o schema. Use expand/contract: adicione uma view de compatibilidade e migre gradualmente.",
+			Message:   "RENAME locks the schema. Use expand/contract: add a compatibility view and migrate gradually.",
 			Line:      line,
 		}}
 	}
@@ -149,15 +149,15 @@ func analyzeStatement(stmt parser.Statement, fullSQL string, opts AnalyzeOptions
 			LockMode:  LockAccessExclusive,
 			Risk:      RiskCritical,
 			Pattern:   PatternTruncate,
-			Message:   "TRUNCATE adquire ACCESS EXCLUSIVE. Prefira DELETE com lock_timeout ou TRUNCATE ... CASCADE explícito.",
+			Message:   "TRUNCATE acquires ACCESS EXCLUSIVE. Prefer DELETE with lock_timeout or explicit TRUNCATE ... CASCADE.",
 			Line:      line,
 		}}
 	}
 	return nil
 }
 
-// analyzeAlterTable detecta todos os problemas nos comandos de um ALTER TABLE.
-// Uma única instrução ALTER TABLE pode conter múltiplos comandos perigosos.
+// analyzeAlterTable detects all issues in the commands of an ALTER TABLE statement.
+// A single ALTER TABLE can contain multiple dangerous commands.
 func analyzeAlterTable(alter *pg_query.AlterTableStmt, raw string, line int, opts AnalyzeOptions) []LintResult {
 	var results []LintResult
 
@@ -178,7 +178,7 @@ func analyzeAlterTable(alter *pg_query.AlterTableStmt, raw string, line int, opt
 				LockMode:  LockAccessExclusive,
 				Risk:      RiskCritical,
 				Pattern:   PatternDropColumn,
-				Message:   "DROP COLUMN adquire ACCESS EXCLUSIVE e reescreve o catálogo. Use expand/contract: renomeie para _unused primeiro e remova em deploy futuro.",
+				Message:   "DROP COLUMN acquires ACCESS EXCLUSIVE and rewrites the catalog. Use expand/contract: rename to _unused first, remove in a future deploy.",
 				Line:      line,
 			})
 		case pg_query.AlterTableType_AT_SetNotNull:
@@ -187,7 +187,7 @@ func analyzeAlterTable(alter *pg_query.AlterTableStmt, raw string, line int, opt
 				LockMode:  LockAccessExclusive,
 				Risk:      RiskCritical,
 				Pattern:   PatternSetNotNull,
-				Message:   "SET NOT NULL escaneia a tabela inteira. Adicione CHECK (col IS NOT NULL) NOT VALID, valide com VALIDATE CONSTRAINT, depois SET NOT NULL.",
+				Message:   "SET NOT NULL scans the entire table. Add CHECK (col IS NOT NULL) NOT VALID, validate with VALIDATE CONSTRAINT, then SET NOT NULL.",
 				Line:      line,
 			})
 		case pg_query.AlterTableType_AT_AlterColumnType:
@@ -196,7 +196,7 @@ func analyzeAlterTable(alter *pg_query.AlterTableStmt, raw string, line int, opt
 				LockMode:  LockAccessExclusive,
 				Risk:      RiskCritical,
 				Pattern:   PatternAlterColumnType,
-				Message:   "ALTER COLUMN TYPE reescreve a tabela. Use nova coluna + trigger de sync + swap gradual.",
+				Message:   "ALTER COLUMN TYPE rewrites the table. Use a new column + sync trigger + gradual swap.",
 				Line:      line,
 			})
 		case pg_query.AlterTableType_AT_AddConstraint:
@@ -207,7 +207,7 @@ func analyzeAlterTable(alter *pg_query.AlterTableStmt, raw string, line int, opt
 					LockMode:  LockAccessExclusive,
 					Risk:      RiskCritical,
 					Pattern:   PatternAddConstraintNoNotValid,
-					Message:   "ADD CONSTRAINT sem NOT VALID escaneia a tabela inteira. Use ADD CONSTRAINT ... NOT VALID; VALIDATE CONSTRAINT ... em seguida.",
+					Message:   "ADD CONSTRAINT without NOT VALID scans the entire table. Use ADD CONSTRAINT ... NOT VALID; then VALIDATE CONSTRAINT ... in a separate deploy.",
 					Line:      line,
 				})
 			}
@@ -216,19 +216,19 @@ func analyzeAlterTable(alter *pg_query.AlterTableStmt, raw string, line int, opt
 	return results
 }
 
-// addColumnWithDefaultResult retorna o LintResult para P1, ajustado pela versão do PG.
-// Em PG11+, ADD COLUMN com DEFAULT não reescreve a tabela (fast column add),
-// mas ainda adquire ACCESS EXCLUSIVE brevemente para atualizar o catálogo.
+// addColumnWithDefaultResult returns the LintResult for P1, adjusted by PG version.
+// In PG11+, ADD COLUMN with DEFAULT does not rewrite the table (fast column add),
+// but still acquires ACCESS EXCLUSIVE briefly to update the catalog.
 func addColumnWithDefaultResult(raw string, line int, pgVersion int) *LintResult {
 	switch {
 	case pgVersion == 0:
-		// Versão não especificada: diagnóstico conservador.
+		// Version unspecified: conservative diagnosis.
 		return &LintResult{
 			Statement: raw,
 			LockMode:  LockAccessExclusive,
 			Risk:      RiskCritical,
 			Pattern:   PatternAddColumnWithDefault,
-			Message:   "ADD COLUMN com DEFAULT reescreve a tabela inteira (PG10 e anteriores). Se estiver no PG11+, use --pg-version 11 para diagnóstico preciso.",
+			Message:   "ADD COLUMN with DEFAULT rewrites the entire table (PG10 and earlier). If you are on PG11+, use --pg-version 11 for accurate diagnosis.",
 			Line:      line,
 		}
 	case pgVersion < 11:
@@ -237,17 +237,17 @@ func addColumnWithDefaultResult(raw string, line int, pgVersion int) *LintResult
 			LockMode:  LockAccessExclusive,
 			Risk:      RiskCritical,
 			Pattern:   PatternAddColumnWithDefault,
-			Message:   fmt.Sprintf("ADD COLUMN com DEFAULT reescreve a tabela inteira no PG%d. Adicione a coluna sem default, depois faça UPDATE em batches.", pgVersion),
+			Message:   fmt.Sprintf("ADD COLUMN with DEFAULT rewrites the entire table on PG%d. Add the column without a default, then UPDATE in batches.", pgVersion),
 			Line:      line,
 		}
 	default:
-		// PG11+: sem reescrita de tabela, mas lock de catálogo ainda existe.
+		// PG11+: no table rewrite, but catalog lock still exists.
 		return &LintResult{
 			Statement: raw,
 			LockMode:  LockAccessExclusive,
 			Risk:      RiskWarn,
 			Pattern:   PatternAddColumnWithDefault,
-			Message:   fmt.Sprintf("Em PG%d, ADD COLUMN com DEFAULT não reescreve a tabela, mas ainda adquire ACCESS EXCLUSIVE brevemente para atualizar o catálogo.", pgVersion),
+			Message:   fmt.Sprintf("On PG%d, ADD COLUMN with DEFAULT does not rewrite the table, but still acquires ACCESS EXCLUSIVE briefly to update the catalog.", pgVersion),
 			Line:      line,
 		}
 	}
@@ -260,7 +260,7 @@ func analyzeCreateIndex(index *pg_query.IndexStmt, raw string, line int) *LintRe
 			LockMode:  LockShare,
 			Risk:      RiskCritical,
 			Pattern:   PatternCreateIndexNoConcurrently,
-			Message:   "CREATE INDEX sem CONCURRENTLY bloqueia escritas durante o build. Use CREATE INDEX CONCURRENTLY.",
+			Message:   "CREATE INDEX without CONCURRENTLY blocks writes during the build. Use CREATE INDEX CONCURRENTLY.",
 			Line:      line,
 		}
 	}

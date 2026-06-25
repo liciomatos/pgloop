@@ -9,13 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-make build      # go build com -ldflags "-X main.version=$(VERSION)"
+make build      # go build with -ldflags "-X main.version=$(VERSION)"
 make test       # go test ./... -v
-make bench      # benchmark lockmapper (target: <200ms para 100 statements)
+make bench      # benchmark lockmapper (target: <200ms for 100 statements)
 make lint       # golangci-lint run ./...
-make install    # go install com ldflags
+make install    # go install with ldflags
 make demo       # build + run demo/run.sh
-make release    # goreleaser release --clean (requer tag git)
+make release    # goreleaser release --clean (requires a git tag)
 ```
 
 Run a single test:
@@ -32,82 +32,82 @@ The pipeline for `pgloop lint <file>` is linear:
 ```
 SQL file
   → parser.ParseStatements()              # AST via pg_query_go (cgo)
-  → lockmapper.Analyze(stmts, sql, opts)  # detecta padrões, retorna []LintResult
-  → cmd: applyIgnore()                    # filtra por --ignore
-  → cmd: enrichWithSuggestions()          # popula LintResult.Suggestion via rewriter
-  → output.NewRenderer().Render()         # formata: terminal / JSON / GitHub Annotations
+  → lockmapper.Analyze(stmts, sql, opts)  # detects patterns, returns []LintResult
+  → cmd: applyIgnore()                    # filters by --ignore
+  → cmd: enrichWithSuggestions()          # populates LintResult.Suggestion via rewriter
+  → output.NewRenderer().Render()         # formats: terminal / JSON / GitHub Annotations
 ```
 
-**`internal/parser`** — wrapper sobre `pg_query_go/v6`. Retorna `[]Statement{Raw, Node, Position}`. `Raw` é SQL canônico (deparsado); `Position` é byte offset para cálculo de linha.
+**`internal/parser`** — wrapper around `pg_query_go/v6`. Returns `[]Statement{Raw, Node, Position}`. `Raw` is canonical SQL (deparsed); `Position` is a byte offset for line number calculation.
 
-**`internal/lockmapper`** — motor de análise. `Analyze(stmts, sql, AnalyzeOptions)` despacha para `analyzeStatement` → `analyzeAlterTable` (retorna `[]LintResult`, pois um ALTER TABLE pode ter múltiplos comandos perigosos). Appenda P9 e P10 como sintéticos ao final.
+**`internal/lockmapper`** — analysis engine. `Analyze(stmts, sql, AnalyzeOptions)` dispatches to `analyzeStatement` → `analyzeAlterTable` (returns `[]LintResult`, since one ALTER TABLE can contain multiple dangerous commands). P9 and P10 are appended as synthetic results at the end.
 
-**`internal/rewriter`** — mapeia `PatternID → string` com receita de reescrita segura. Chamado exclusivamente em `cmd/lint.go` via `enrichWithSuggestions()`.
+**`internal/rewriter`** — maps `PatternID → string` with a safe rewrite recipe. Called exclusively from `cmd/lint.go` via `enrichWithSuggestions()`.
 
-**`internal/output`** — três renderers unexported (`terminalRenderer`, `jsonRenderer`, `gitHubRenderer`) atrás da interface `Renderer`. Criados via `output.NewRenderer(format, showSuggestions)`. `riskToLevel()` em `level.go` — nunca duplicar por renderer.
+**`internal/output`** — three unexported renderers (`terminalRenderer`, `jsonRenderer`, `gitHubRenderer`) behind the `Renderer` interface. Created via `output.NewRenderer(format, showSuggestions)`. `riskToLevel()` lives in `level.go` — never duplicate per renderer.
 
-**`cmd/`** — comandos Cobra. `lint.go` orquestra o pipeline. `patterns.go` lista todos os padrões. Exit codes via `ExitError` retornado de `RunE`; `root.go` chama `os.Exit` — em nenhum outro lugar. Viper carrega `.pgloop.yaml` da raiz do projeto ou `~/.config/pgloop/`.
+**`cmd/`** — Cobra commands. `lint.go` orchestrates the pipeline. `patterns.go` lists all patterns. Exit codes via `ExitError` returned from `RunE`; `root.go` calls `os.Exit` — nowhere else. Viper loads `.pgloop.yaml` from the project root or `~/.config/pgloop/`.
 
 ## Code Conventions
 
 ### Naming
-- Campos de struct: palavras completas — `Message` não `Msg`, `Statement` não `Stmt`
-- Variáveis de loop: `result` não `r`, `stmt` não `s`, `pattern` não `p` ou `i`
-- Funções de verificação prefixadas pelo sujeito: `columnHasDefault`, `hasTimeoutSet`
+- Struct fields: full words — `Message` not `Msg`, `Statement` not `Stmt`
+- Loop variables: `result` not `r`, `stmt` not `s`, `pattern` not `p` or `i`
+- Predicate functions prefixed by the subject: `columnHasDefault`, `hasTimeoutSet`
 
 ### LintResult
-Tipo central. Campos críticos:
-- `Synthetic bool` — `true` para P9/P10 (diagnóstico de arquivo). O renderer usa `!result.Synthetic` para decidir se exibe o `Statement`. **Nunca usar strings sentinela para isso.**
-- `Suggestion string` — populado em `cmd/lint.go` após `Analyze()`, nunca dentro de `lockmapper` ou `output`.
-- `Message string` — descrição do problema, pode variar por `PGVersion` (ex: P1).
+Central type. Critical fields:
+- `Synthetic bool` — `true` for P9/P10 (file-level diagnostic). The renderer uses `!result.Synthetic` to decide whether to display the `Statement`. **Never use sentinel strings for this.**
+- `Suggestion string` — populated in `cmd/lint.go` after `Analyze()`, never inside `lockmapper` or `output`.
+- `Message string` — issue description, may vary by `PGVersion` (e.g. P1).
 
 ### AnalyzeOptions
-Passar `AnalyzeOptions` para `Analyze()` — nunca adicionar parâmetros avulsos. Novas opções de análise entram nessa struct.
+Pass `AnalyzeOptions` to `Analyze()` — never add loose parameters. New analysis options go into this struct.
 
-### analyzeAlterTable retorna []LintResult
-Um `ALTER TABLE` pode ter múltiplos comandos (ADD COLUMN, DROP COLUMN, etc.) na mesma instrução. `analyzeAlterTable` deve retornar **todos** os problemas encontrados, não apenas o primeiro.
+### analyzeAlterTable returns []LintResult
+A single `ALTER TABLE` can contain multiple commands (ADD COLUMN, DROP COLUMN, etc.). `analyzeAlterTable` must return **all** issues found, not just the first one.
 
 ### Output layer
-`output` não deve importar `rewriter`. As sugestões chegam pré-populadas em `LintResult.Suggestion`. `riskToLevel()` (em `level.go`) e `countByLevel()` (em `terminal.go`) não devem ser duplicadas entre renderers.
+`output` must not import `rewriter`. Suggestions arrive pre-populated in `LintResult.Suggestion`. `riskToLevel()` (in `level.go`) and `countByLevel()` (in `terminal.go`) must not be duplicated across renderers.
 
 ### Exit codes
-`os.Exit` é chamado apenas em `cmd/root.go`'s `Execute()`. `RunE` retorna `*ExitError{Code: N}`; `Execute()` detecta com `errors.As`.
+`os.Exit` is called only in `cmd/root.go`'s `Execute()`. `RunE` returns `*ExitError{Code: N}`; `Execute()` detects it with `errors.As`.
 
-### Adicionar um novo output format
-Criar struct unexported implementando `Renderer`, adicionar `case` em `NewRenderer()` em `renderer.go`. Nunca adicionar `switch` de formato em outro lugar.
+### Adding a new output format
+Create an unexported struct implementing `Renderer`, add a `case` in `NewRenderer()` in `renderer.go`. Never add a format `switch` anywhere else.
 
 ## Patterns (P1–P10)
 
-`PatternID` constants em `lockmapper/mapper.go`. `AllPatterns()` é a fonte de verdade para metadata (código, nome, lock, risco, nota de versão) — usada por `pgloop patterns`.
+`PatternID` constants in `lockmapper/mapper.go`. `AllPatterns()` is the source of truth for metadata (code, name, lock, risk, version note) — used by `pgloop patterns`.
 
-Adicionar novo padrão:
-1. Constante `PatternID`
-2. Entrada em `AllPatterns()` com `VersionNote` se comportamento varia por PG version
-3. Detecção em `analyzeStatement` ou `analyzeAlterTable`
-4. Receita em `rewriter/rewriter.go`
-5. Fixture em `testdata/migrations/NN_name.sql` + caso em `mapper_test.go`
+To add a new pattern:
+1. Add a `PatternID` constant
+2. Add an entry to `AllPatterns()` with a `VersionNote` if behavior varies by PG version
+3. Add detection logic in `analyzeStatement` or `analyzeAlterTable`
+4. Add a recipe in `rewriter/rewriter.go`
+5. Add a fixture in `testdata/migrations/NN_name.sql` and a case in `mapper_test.go`
 
-**P1 (ADD COLUMN com DEFAULT)** é version-aware: CRITICAL em PG≤10, WARN em PG≥11. A lógica está em `addColumnWithDefaultResult(raw, line, pgVersion)`. Se adicionar padrões version-aware, seguir o mesmo padrão de função separada.
+**P1 (ADD COLUMN with DEFAULT)** is version-aware: CRITICAL on PG≤10, WARN on PG≥11. The logic lives in `addColumnWithDefaultResult(raw, line, pgVersion)`. Follow the same pattern for new version-aware rules.
 
-P9 e P10 são sintéticos (`Synthetic: true`) — sem statement associado.
+P9 and P10 are synthetic (`Synthetic: true`) — no statement is associated with them.
 
 ## PG Version
-`AnalyzeOptions.PGVersion = 0` significa "não especificada" → comportamento conservador (assume PG10). Flags da CLI (`--pg-version`) e config (`.pgloop.yaml: lint.pg_version`) sobrescrevem. Testes que validam comportamento version-aware usam `AnalyzeOptions{PGVersion: N}` explicitamente.
+`AnalyzeOptions.PGVersion = 0` means "unspecified" → conservative behavior (assumes PG10). CLI flags (`--pg-version`) and config (`.pgloop.yaml: lint.pg_version`) override this. Tests that validate version-aware behavior use `AnalyzeOptions{PGVersion: N}` explicitly.
 
 ## Test Fixtures
 
-`testdata/migrations/` tem dois tipos:
-- `NN_name.sql` — migrations perigosas, cada uma dispara um padrão específico
-- `safe_*.sql` — migrations seguras, verificadas para zero issues CRITICAL (guard de falso positivo)
+`testdata/migrations/` has two types:
+- `NN_name.sql` — dangerous migrations, each triggering one specific pattern
+- `safe_*.sql` — safe migrations, verified to produce zero CRITICAL issues (false-positive guard)
 
-Testes em `internal/lockmapper/mapper_test.go` (table-driven, file-driven) e `internal/parser/parser_test.go` (edge cases: vazio, sintaxe inválida, multi-statement, posições).
+Tests in `internal/lockmapper/mapper_test.go` (table-driven, file-driven) and `internal/parser/parser_test.go` (edge cases: empty, invalid syntax, multi-statement, positions).
 
 ## Config (.pgloop.yaml)
 
-Carregado automaticamente se presente na raiz do projeto ou em `~/.config/pgloop/`. Suporta apenas configurações de lint (não profiles de conexão — esses são v0.2+). Exemplo em `config/pgloop.yaml`. Flags da CLI sempre têm precedência sobre o arquivo.
+Loaded automatically if present in the project root or at `~/.config/pgloop/`. Supports only lint settings (no connection profiles — those are v0.2+). Example in `config/pgloop.yaml`. CLI flags always take precedence over the file.
 
 ## Dependencies
 
-- `pg_query_go/v6` — cgo binding to libpg_query; requer gcc
-- `charmbracelet/lipgloss` — terminal styling; cores ANSI nomeadas em `terminal.go` (`colorRed`, `colorYellow`, etc.) — nunca usar strings numéricas diretamente
+- `pg_query_go/v6` — cgo binding to libpg_query; requires gcc
+- `charmbracelet/lipgloss` — terminal styling; named ANSI color constants in `terminal.go` (`colorRed`, `colorYellow`, etc.) — never use numeric strings directly
 - `spf13/cobra` + `spf13/viper` — CLI + config

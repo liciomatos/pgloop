@@ -27,7 +27,7 @@ var (
 
 func renderTerminal(file string, results []lockmapper.LintResult, showSuggestions bool) {
 	if len(results) == 0 {
-		fmt.Println(styleOK.Render("✓") + " Nenhum problema encontrado em " + styleBold.Render(file))
+		fmt.Println(styleOK.Render("✓") + " No issues found in " + styleBold.Render(file))
 		return
 	}
 
@@ -38,7 +38,7 @@ func renderTerminal(file string, results []lockmapper.LintResult, showSuggestion
 		fmt.Printf("%s  %s\n", icon, levelStyle.Render(string(result.Risk)))
 
 		if result.Line > 0 {
-			fmt.Printf("   %s  linha %d\n", styleDim.Render("→"), result.Line)
+			fmt.Printf("   %s  line %d\n", styleDim.Render("→"), result.Line)
 		}
 
 		if !result.Synthetic {
@@ -49,7 +49,7 @@ func renderTerminal(file string, results []lockmapper.LintResult, showSuggestion
 		fmt.Printf("   %s\n", result.Message)
 
 		if showSuggestions && result.Suggestion != "" {
-			fmt.Printf("\n   %s\n", styleDim.Render("Sugestão:"))
+			fmt.Printf("\n   %s\n", styleDim.Render("Suggestion:"))
 			for _, line := range strings.Split(result.Suggestion, "\n") {
 				fmt.Printf("   %s\n", styleCode.Render(line))
 			}
@@ -58,7 +58,7 @@ func renderTerminal(file string, results []lockmapper.LintResult, showSuggestion
 	}
 
 	critical, warn := countByLevel(results)
-	summary := fmt.Sprintf("Total: %d problema(s)", len(results))
+	summary := fmt.Sprintf("Total: %d issue(s)", len(results))
 	if critical > 0 {
 		summary += "  " + styleCritical.Render(fmt.Sprintf("%d CRITICAL", critical))
 	}

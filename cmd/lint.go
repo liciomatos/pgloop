@@ -24,34 +24,34 @@ var (
 )
 
 var lintCmd = &cobra.Command{
-	Use:   "lint <arquivo.sql|diretório> [...]",
-	Short: "Analisa migrations SQL e detecta padrões perigosos de lock",
-	Long: `Analisa estaticamente uma ou mais migrations SQL e mapeia cada DDL ao seu lock mode exato.
+	Use:   "lint <file.sql|directory> [...]",
+	Short: "Analyze SQL migrations and detect dangerous lock patterns",
+	Long: `Statically analyzes one or more SQL migrations and maps each DDL to its exact lock mode.
 
-Aceita arquivos individuais, múltiplos arquivos ou um diretório (lê todos os .sql em ordem alfabética).
+Accepts individual files, multiple files, or a directory (reads all .sql files alphabetically).
 
   pgloop lint migration.sql
   pgloop lint migrations/
   pgloop lint migrations/001.sql migrations/002.sql
 
-Não conecta ao banco — a análise é feita via AST (mesma engine do PostgreSQL).
-Cada problema detectado recebe um código P1–P10. Para ver a lista completa:
+No database connection required — analysis is performed via AST (same engine as PostgreSQL).
+Each detected issue is assigned a code P1–P10. To see the full list:
   pgloop patterns
 
 Exit codes:
-  0  sem problemas
-  1  apenas WARNings
-  2  pelo menos um CRITICAL (ou WARN com --fail-on WARN)`,
+  0  no issues
+  1  warnings only
+  2  at least one CRITICAL (or WARN with --fail-on WARN)`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runLint,
 }
 
 func init() {
-	lintCmd.Flags().StringVar(&flagFormat, "format", "terminal", "formato de saída: terminal, json, github")
-	lintCmd.Flags().StringSliceVar(&flagIgnore, "ignore", nil, "padrões a ignorar por código (ex: --ignore P2,P9) — veja 'pgloop patterns'")
-	lintCmd.Flags().StringVar(&flagFailOn, "fail-on", "CRITICAL", "nível mínimo para exit code 2: CRITICAL ou WARN")
-	lintCmd.Flags().BoolVar(&flagSuggestions, "suggestions", true, "exibe sugestões de reescrita no terminal")
-	lintCmd.Flags().IntVar(&flagPGVersion, "pg-version", 0, "versão major do PostgreSQL alvo (ex: 14) — afeta diagnóstico do P1")
+	lintCmd.Flags().StringVar(&flagFormat, "format", "terminal", "output format: terminal, json, github")
+	lintCmd.Flags().StringSliceVar(&flagIgnore, "ignore", nil, "suppress patterns by code (e.g. --ignore P2,P9) — see 'pgloop patterns'")
+	lintCmd.Flags().StringVar(&flagFailOn, "fail-on", "CRITICAL", "minimum level for exit code 2: CRITICAL or WARN")
+	lintCmd.Flags().BoolVar(&flagSuggestions, "suggestions", true, "show safe rewrite recipes in terminal output")
+	lintCmd.Flags().IntVar(&flagPGVersion, "pg-version", 0, "target PostgreSQL major version (e.g. 14) — affects P1 diagnosis")
 
 	viper.BindPFlag("lint.format", lintCmd.Flags().Lookup("format"))
 	viper.BindPFlag("lint.ignore", lintCmd.Flags().Lookup("ignore"))
@@ -97,16 +97,16 @@ func runLint(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// lintFile analisa um único arquivo SQL e retorna os resultados enriquecidos.
+// lintFile analyzes a single SQL file and returns enriched results.
 func lintFile(file string, opts lockmapper.AnalyzeOptions) ([]lockmapper.LintResult, error) {
 	sql, err := os.ReadFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("não foi possível ler %s: %w", file, err)
+		return nil, fmt.Errorf("could not read %s: %w", file, err)
 	}
 
 	stmts, err := parser.ParseStatements(string(sql))
 	if err != nil {
-		return nil, fmt.Errorf("%s: erro ao parsear SQL: %w", file, err)
+		return nil, fmt.Errorf("%s: SQL parse error: %w", file, err)
 	}
 
 	results := lockmapper.Analyze(stmts, string(sql), opts)
@@ -115,14 +115,14 @@ func lintFile(file string, opts lockmapper.AnalyzeOptions) ([]lockmapper.LintRes
 	return results, nil
 }
 
-// resolveInputFiles expande args em lista de arquivos .sql.
-// Diretórios são expandidos para seus arquivos .sql em ordem alfabética.
+// resolveInputFiles expands args into a flat list of .sql files.
+// Directories are expanded to their .sql files sorted alphabetically.
 func resolveInputFiles(args []string) ([]string, error) {
 	var files []string
 	for _, arg := range args {
 		info, err := os.Stat(arg)
 		if err != nil {
-			return nil, fmt.Errorf("não encontrado: %s", arg)
+			return nil, fmt.Errorf("not found: %s", arg)
 		}
 		if info.IsDir() {
 			dirFiles, err := sqlFilesInDir(arg)
@@ -135,17 +135,17 @@ func resolveInputFiles(args []string) ([]string, error) {
 		}
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("nenhum arquivo .sql encontrado nos argumentos fornecidos")
+		return nil, fmt.Errorf("no .sql files found in the provided arguments")
 	}
 	return files, nil
 }
 
-// sqlFilesInDir retorna todos os arquivos .sql de um diretório, em ordem alfabética.
-// Não é recursivo — apenas o nível imediato do diretório.
+// sqlFilesInDir returns all .sql files in a directory, sorted alphabetically.
+// Non-recursive — only the immediate directory level.
 func sqlFilesInDir(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao ler diretório %s: %w", dir, err)
+		return nil, fmt.Errorf("error reading directory %s: %w", dir, err)
 	}
 	var files []string
 	for _, entry := range entries {
@@ -157,8 +157,8 @@ func sqlFilesInDir(dir string) ([]string, error) {
 	return files, nil
 }
 
-// printMultiFileSummary exibe o resumo consolidado após análise de múltiplos arquivos.
-// Só imprime para o formato terminal — JSON e github já são auto-suficientes por arquivo.
+// printMultiFileSummary prints an aggregate summary after analyzing multiple files.
+// Only prints for terminal format — JSON and github are self-contained per file.
 func printMultiFileSummary(fileCount int, results []lockmapper.LintResult) {
 	format := strings.ToLower(viper.GetString("lint.format"))
 	if format != "terminal" && format != "" {
@@ -167,12 +167,12 @@ func printMultiFileSummary(fileCount int, results []lockmapper.LintResult) {
 
 	critical, warn := countByRisk(results)
 	fmt.Println("─────────────────────────────────────────────────────────────")
-	fmt.Printf("Resumo: %d arquivo(s) analisado(s)", fileCount)
+	fmt.Printf("Summary: %d file(s) analyzed", fileCount)
 	if len(results) == 0 {
-		fmt.Println("  ✓ nenhum problema encontrado")
+		fmt.Println("  ✓ no issues found")
 		return
 	}
-	fmt.Printf("  |  Total: %d problema(s)", len(results))
+	fmt.Printf("  |  Total: %d issue(s)", len(results))
 	if critical > 0 {
 		fmt.Printf("  %d CRITICAL", critical)
 	}
@@ -194,7 +194,7 @@ func countByRisk(results []lockmapper.LintResult) (critical, warn int) {
 	return
 }
 
-// enrichWithSuggestions popula o campo Suggestion de cada resultado via rewriter.
+// enrichWithSuggestions populates the Suggestion field of each result via the rewriter.
 func enrichWithSuggestions(results []lockmapper.LintResult) []lockmapper.LintResult {
 	for i := range results {
 		results[i].Suggestion = rewriter.Suggestion(results[i].Pattern)

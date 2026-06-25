@@ -11,16 +11,16 @@ import (
 
 var patternsCmd = &cobra.Command{
 	Use:   "patterns",
-	Short: "Lista todos os padrões detectados pelo lint com seus códigos",
-	Long:  "Exibe a tabela completa de padrões detectáveis pelo pgloop lint, incluindo o código usado em --ignore.",
+	Short: "List all patterns detected by lint with their codes",
+	Long:  "Displays the full table of patterns detectable by pgloop lint, including the code used with --ignore.",
 	Run:   runPatterns,
 }
 
 func runPatterns(cmd *cobra.Command, args []string) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Fprintln(tw, "CÓDIGO\tRISCO\tLOCK\tPADRÃO\tOBSERVAÇÃO")
-	fmt.Fprintln(tw, "──────\t─────\t────\t──────\t──────────")
+	fmt.Fprintln(tw, "CODE\tRISK\tLOCK\tPATTERN\tNOTE")
+	fmt.Fprintln(tw, "────\t────\t────\t───────\t────")
 
 	for _, p := range lockmapper.AllPatterns() {
 		lock := string(p.LockMode)
@@ -32,6 +32,6 @@ func runPatterns(cmd *cobra.Command, args []string) {
 
 	tw.Flush()
 	fmt.Println()
-	fmt.Println("Use --ignore P2,P9 no comando lint para suprimir padrões específicos.")
-	fmt.Println("Use --pg-version 14 para diagnóstico preciso por versão do PostgreSQL.")
+	fmt.Println("Use --ignore P2,P9 with the lint command to suppress specific patterns.")
+	fmt.Println("Use --pg-version 14 for version-accurate diagnosis.")
 }

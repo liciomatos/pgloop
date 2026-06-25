@@ -1,32 +1,33 @@
 # pgloop
 
-CLI local-first para o loop diário do desenvolvedor com PostgreSQL. Detecta padrões perigosos de lock em migrations SQL antes que causem problemas em produção — sem conectar ao banco, sem dependências externas.
+Local-first CLI for the daily developer loop with PostgreSQL. Detects dangerous lock patterns in SQL migrations before they cause problems in production — no database connection, no external dependencies.
 
 ```
 $ pgloop lint migration.sql
 
 ✖  CRITICAL
-   →  linha 3
+   →  line 3
    CREATE INDEX idx_orders_user_id ON orders(user_id)
    Lock:  SHARE
-   CREATE INDEX sem CONCURRENTLY bloqueia escritas durante o build. Use CREATE INDEX CONCURRENTLY.
+   CREATE INDEX without CONCURRENTLY blocks writes during the build. Use CREATE INDEX CONCURRENTLY.
 
-   Sugestão:
+   Suggestion:
    CREATE INDEX CONCURRENTLY idx_name ON t(col);
+   -- Note: cannot run inside an explicit transaction (BEGIN/COMMIT)
 
 ⚠  WARN
    Lock:  NONE
-   Migration sem lock_timeout ou statement_timeout.
+   Migration has no lock_timeout or statement_timeout.
 
-Total: 2 problema(s)  1 CRITICAL  1 WARN
+Total: 2 issue(s)  1 CRITICAL  1 WARN
 ```
 
 ---
 
-## Instalação
+## Installation
 
 ```bash
-# Build a partir do código-fonte (requer Go 1.22+ e gcc)
+# Build from source (requires Go 1.22+ and gcc)
 git clone https://github.com/liciomatos/pgloop
 cd pgloop
 make install
@@ -34,15 +35,23 @@ make install
 
 ---
 
-## Uso
+## Usage
 
-### Verificação básica
+### Basic check
 
 ```bash
 pgloop lint migration.sql
 ```
 
-### Integração com CI (saída JSON)
+### Directory or multiple files
+
+```bash
+pgloop lint migrations/               # all .sql files, alphabetical order
+pgloop lint 001.sql 002.sql 003.sql   # explicit list
+pgloop lint migrations/ hotfix.sql    # mix of directory and file
+```
+
+### CI integration (JSON output)
 
 ```bash
 pgloop lint migration.sql --format json
@@ -61,146 +70,125 @@ pgloop lint migration.sql --format json
       "level": "error",
       "lock_mode": "SHARE",
       "pattern": 2,
-      "message": "CREATE INDEX sem CONCURRENTLY bloqueia escritas...",
+      "message": "CREATE INDEX without CONCURRENTLY blocks writes during the build...",
       "suggestion": "CREATE INDEX CONCURRENTLY idx_name ON t(col);"
     }
   ]
 }
 ```
 
-### GitHub Actions (annotations inline no PR)
+### GitHub Actions (inline PR annotations)
 
 ```bash
 pgloop lint migration.sql --format github
-# ::error file=migration.sql,line=3::[pgloop P2] CREATE INDEX sem CONCURRENTLY...
+# ::error file=migration.sql,line=3::[pgloop P2] CREATE INDEX without CONCURRENTLY...
 ```
 
-### Flags disponíveis
+### Available flags
 
-| Flag | Padrão | Descrição |
+| Flag | Default | Description |
 |---|---|---|
-| `--format` | `terminal` | Formato de saída: `terminal`, `json`, `github` |
-| `--fail-on` | `CRITICAL` | Nível mínimo para exit code 2: `CRITICAL` ou `WARN` |
-| `--ignore` | — | Suprime padrões por ID: `--ignore P2,P9` |
-| `--suggestions` | `true` | Exibe receitas de reescrita segura no terminal |
+| `--format` | `terminal` | Output format: `terminal`, `json`, `github` |
+| `--fail-on` | `CRITICAL` | Minimum level for exit code 2: `CRITICAL` or `WARN` |
+| `--ignore` | — | Suppress patterns by ID: `--ignore P2,P9` |
+| `--suggestions` | `true` | Show safe rewrite recipes in terminal output |
+| `--pg-version` | `0` | Target PostgreSQL major version (e.g. `14`) — affects P1 diagnosis |
 
 ### Exit codes
 
-| Código | Significado |
+| Code | Meaning |
 |---|---|
-| `0` | Nenhum problema encontrado |
-| `1` | Apenas WARNings |
-| `2` | Pelo menos um CRITICAL (ou WARN se `--fail-on WARN`) |
+| `0` | No issues found |
+| `1` | Warnings only |
+| `2` | At least one CRITICAL (or WARN if `--fail-on WARN`) |
 
 ---
 
-## Padrões Detectados
+## Detected Patterns
 
-| ID | Padrão SQL | Lock Adquirido | Risco |
+| ID | SQL Pattern | Lock Acquired | Risk |
 |---|---|---|---|
-| P1 | `ADD COLUMN ... DEFAULT valor` | ACCESS EXCLUSIVE | CRITICAL |
-| P2 | `CREATE INDEX` sem `CONCURRENTLY` | SHARE | CRITICAL |
-| P3 | `ADD CONSTRAINT` sem `NOT VALID` | ACCESS EXCLUSIVE | CRITICAL |
+| P1 | `ADD COLUMN ... DEFAULT value` | ACCESS EXCLUSIVE | CRITICAL |
+| P2 | `CREATE INDEX` without `CONCURRENTLY` | SHARE | CRITICAL |
+| P3 | `ADD CONSTRAINT` without `NOT VALID` | ACCESS EXCLUSIVE | CRITICAL |
 | P4 | `DROP COLUMN` | ACCESS EXCLUSIVE | CRITICAL |
-| P5 | `SET NOT NULL` sem check constraint prévia | ACCESS EXCLUSIVE | CRITICAL |
+| P5 | `SET NOT NULL` without prior check constraint | ACCESS EXCLUSIVE | CRITICAL |
 | P6 | `RENAME TABLE` / `RENAME COLUMN` | ACCESS EXCLUSIVE | WARN |
 | P7 | `ALTER COLUMN TYPE` | ACCESS EXCLUSIVE | CRITICAL |
 | P8 | `TRUNCATE` | ACCESS EXCLUSIVE | CRITICAL |
-| P9 | Migration sem `lock_timeout` / `statement_timeout` | — | WARN |
-| P10 | Múltiplas operações `ACCESS EXCLUSIVE` na mesma migration | — | WARN |
+| P9 | Migration without `lock_timeout` / `statement_timeout` | — | WARN |
+| P10 | Multiple `ACCESS EXCLUSIVE` operations in the same migration | — | WARN |
 
-Para cada problema detectado, o pgloop exibe o lock adquirido e uma receita de reescrita segura.
+For each detected issue, pgloop shows the lock acquired and a safe rewrite recipe.
+
+Run `pgloop patterns` to see the full table directly in the terminal.
 
 ---
 
-## Exemplos de Reescrita Segura
+## Safe Rewrite Examples
 
-### P1 — ADD COLUMN com DEFAULT
+### P1 — ADD COLUMN with DEFAULT
 
 ```sql
--- Perigoso
+-- Dangerous
 ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';
 
--- Seguro
+-- Safe
 ALTER TABLE users ADD COLUMN status TEXT;
-UPDATE users SET status = 'active' WHERE id BETWEEN 1 AND 10000; -- em batches
+UPDATE users SET status = 'active' WHERE id BETWEEN 1 AND 10000; -- in batches
 ALTER TABLE users ALTER COLUMN status SET DEFAULT 'active';
 ```
 
-### P2 — CREATE INDEX sem CONCURRENTLY
+### P2 — CREATE INDEX without CONCURRENTLY
 
 ```sql
--- Perigoso (bloqueia escritas durante o build)
+-- Dangerous (blocks writes during the build)
 CREATE INDEX idx_orders_user ON orders(user_id);
 
--- Seguro (não pode estar dentro de BEGIN/COMMIT)
+-- Safe (cannot run inside BEGIN/COMMIT)
 CREATE INDEX CONCURRENTLY idx_orders_user ON orders(user_id);
 ```
 
-### P3 — ADD CONSTRAINT sem NOT VALID
+### P3 — ADD CONSTRAINT without NOT VALID
 
 ```sql
--- Perigoso (escaneia a tabela inteira com lock)
+-- Dangerous (scans the entire table with a lock)
 ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id);
 
--- Seguro (dois deploys separados)
+-- Safe (two separate deploys)
 ALTER TABLE orders ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) NOT VALID;
--- deploy seguinte:
+-- next deploy:
 ALTER TABLE orders VALIDATE CONSTRAINT fk_user;
 ```
 
-### P5 — SET NOT NULL sem check constraint
+### P5 — SET NOT NULL without check constraint
 
 ```sql
--- Perigoso
+-- Dangerous
 ALTER TABLE users ALTER COLUMN email SET NOT NULL;
 
--- Seguro
+-- Safe
 ALTER TABLE users ADD CONSTRAINT chk_email_nn CHECK (email IS NOT NULL) NOT VALID;
-ALTER TABLE users VALIDATE CONSTRAINT chk_email_nn; -- deploy separado, sem full-scan com lock
+ALTER TABLE users VALIDATE CONSTRAINT chk_email_nn; -- separate deploy, no full-scan with lock
 ALTER TABLE users ALTER COLUMN email SET NOT NULL;
 ALTER TABLE users DROP CONSTRAINT chk_email_nn;
 ```
 
 ---
 
-## Configuração
+## Configuration
 
-Crie `.pgloop.yaml` na raiz do projeto ou em `~/.config/pgloop/pgloop.yaml`:
+Create `.pgloop.yaml` in the project root or at `~/.config/pgloop/.pgloop.yaml`:
 
 ```yaml
-default_profile: dev
-
-profiles:
-  dev:
-    host: localhost
-    port: 5432
-    database: myapp_dev
-    user: postgres
-  staging:
-    host: staging-db.internal
-    port: 5432
-    database: myapp
-    user: myapp_readonly
-    ssl_mode: require
-  prod:
-    host: prod-db.internal
-    port: 5432
-    database: myapp
-    user: myapp_readonly
-    ssl_mode: verify-full
-    read_only: true      # bloqueia writes acidentais
-
 lint:
-  fail_on: [ACCESS_EXCLUSIVE]
-  warn_on: [SHARE]
-  ignore: []             # ex: [P9] para ignorar aviso de timeout globalmente
-
-apply:
-  lock_timeout: 3s
-  statement_timeout: 30s
-  dry_run: false
+  pg_version: 14        # target PostgreSQL major version (affects P1 diagnosis)
+  fail_on: CRITICAL     # CRITICAL or WARN
+  suggestions: true     # show safe rewrite recipes in terminal output
+  ignore: []            # e.g. [P9] to suppress timeout warnings globally
 ```
+
+CLI flags always take precedence over the config file.
 
 ---
 
@@ -231,10 +219,10 @@ jobs:
 
 ## Roadmap
 
-| Versão | Feature |
+| Version | Feature |
 |---|---|
-| **v0.1** (atual) | `pgloop lint` — análise estática dos 10 padrões |
-| v0.2 | `pgloop lint --trace` — executa em container PostgreSQL efêmero (Docker), captura locks reais |
-| v0.3 | `pgloop explain` — EXPLAIN ANALYZE renderizado no terminal, sem serviços externos |
-| v0.4 | `pgloop seed` — seed schema-aware respeitando foreign keys e constraints |
+| **v0.1** (current) | `pgloop lint` — static analysis of 10 patterns |
+| v0.2 | `pgloop lint --trace` — runs in an ephemeral PostgreSQL container (Docker), captures real locks |
+| v0.3 | `pgloop explain` — EXPLAIN ANALYZE rendered in the terminal, no external services |
+| v0.4 | `pgloop seed` — schema-aware seed respecting foreign keys and constraints |
 | v1.0 | `pgloop apply`, MCP server, Homebrew tap |

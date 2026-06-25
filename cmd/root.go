@@ -11,14 +11,14 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "pgloop",
-	Short: "CLI de gerenciamento PostgreSQL — segurança por padrão",
-	Long: `pgloop é um CLI local-first para o loop diário do desenvolvedor com PostgreSQL.
-Cobre o ciclo completo de uma mudança de banco de forma segura, sem sair do terminal.`,
+	Short: "PostgreSQL management CLI — safe by default",
+	Long: `pgloop is a local-first CLI for the daily developer loop with PostgreSQL.
+It covers the full lifecycle of a database change safely, without leaving the terminal.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
 
-// version é injetada em build time via: -ldflags "-X github.com/liciomatos/pgloop/cmd.version=v0.1.0"
+// version is injected at build time via: -ldflags "-X github.com/liciomatos/pgloop/cmd.version=v0.1.0"
 var version = "dev"
 
 func SetVersion(v string) {
@@ -32,7 +32,7 @@ func Execute() {
 		if errors.As(err, &exitErr) {
 			os.Exit(exitErr.Code)
 		}
-		fmt.Fprintln(os.Stderr, "erro:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -49,11 +49,11 @@ func initConfig() {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("$HOME/.config/pgloop")
 
-	// Valores padrão para lint — flags sobrescrevem se fornecidas.
+	// Lint defaults — CLI flags take precedence when provided.
 	viper.SetDefault("lint.format", "terminal")
 	viper.SetDefault("lint.fail_on", "CRITICAL")
 	viper.SetDefault("lint.suggestions", true)
 	viper.SetDefault("lint.pg_version", 0)
 
-	viper.ReadInConfig() // falha silenciosa — config é opcional
+	viper.ReadInConfig() // silently ignored — config file is optional
 }

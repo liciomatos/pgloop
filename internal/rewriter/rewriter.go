@@ -3,58 +3,58 @@ package rewriter
 import "github.com/liciomatos/pgloop/internal/lockmapper"
 
 var recipes = map[lockmapper.PatternID]string{
-	lockmapper.PatternAddColumnWithDefault: `-- Opção segura:
-ALTER TABLE t ADD COLUMN col TEXT;          -- sem default, sem lock de reescrita
-UPDATE t SET col = 'valor' WHERE id BETWEEN ? AND ?;  -- em batches
-ALTER TABLE t ALTER COLUMN col SET DEFAULT 'valor';`,
+	lockmapper.PatternAddColumnWithDefault: `-- Safe alternative:
+ALTER TABLE t ADD COLUMN col TEXT;          -- no default, no table rewrite lock
+UPDATE t SET col = 'value' WHERE id BETWEEN ? AND ?;  -- in batches
+ALTER TABLE t ALTER COLUMN col SET DEFAULT 'value';`,
 
-	lockmapper.PatternCreateIndexNoConcurrently: `-- Opção segura:
+	lockmapper.PatternCreateIndexNoConcurrently: `-- Safe alternative:
 CREATE INDEX CONCURRENTLY idx_name ON t(col);
--- Atenção: não rode dentro de uma transação explícita (BEGIN/COMMIT)`,
+-- Note: cannot run inside an explicit transaction (BEGIN/COMMIT)`,
 
-	lockmapper.PatternAddConstraintNoNotValid: `-- Opção segura:
+	lockmapper.PatternAddConstraintNoNotValid: `-- Safe alternative:
 ALTER TABLE t ADD CONSTRAINT chk_name CHECK (col IS NOT NULL) NOT VALID;
--- Em deploy separado:
+-- In a separate deploy:
 ALTER TABLE t VALIDATE CONSTRAINT chk_name;`,
 
-	lockmapper.PatternDropColumn: `-- Opção segura (expand/contract):
--- 1. Remova referências à coluna no código
--- 2. Renomeie: ALTER TABLE t RENAME COLUMN col TO _col_unused;
--- 3. Em deploy futuro: ALTER TABLE t DROP COLUMN _col_unused;`,
+	lockmapper.PatternDropColumn: `-- Safe alternative (expand/contract):
+-- 1. Remove all references to the column from application code
+-- 2. Rename: ALTER TABLE t RENAME COLUMN col TO _col_unused;
+-- 3. In a future deploy: ALTER TABLE t DROP COLUMN _col_unused;`,
 
-	lockmapper.PatternSetNotNull: `-- Opção segura:
+	lockmapper.PatternSetNotNull: `-- Safe alternative:
 ALTER TABLE t ADD CONSTRAINT chk_nn CHECK (col IS NOT NULL) NOT VALID;
-ALTER TABLE t VALIDATE CONSTRAINT chk_nn;  -- em deploy separado, sem lock
-ALTER TABLE t SET NOT NULL col;            -- após validação, o scan é pulado
+ALTER TABLE t VALIDATE CONSTRAINT chk_nn;  -- separate deploy, no lock
+ALTER TABLE t ALTER COLUMN col SET NOT NULL;  -- scan is skipped after validation
 ALTER TABLE t DROP CONSTRAINT chk_nn;`,
 
-	lockmapper.PatternRenameTableColumn: `-- Opção segura (expand/contract):
--- 1. Adicione a nova coluna/tabela
--- 2. Sincronize com trigger
--- 3. Migre leituras/escritas no código
--- 4. Remova o trigger e a coluna antiga em deploy futuro`,
+	lockmapper.PatternRenameTableColumn: `-- Safe alternative (expand/contract):
+-- 1. Add the new column/table
+-- 2. Sync with a trigger
+-- 3. Migrate reads/writes in application code
+-- 4. Remove the trigger and old column in a future deploy`,
 
-	lockmapper.PatternAlterColumnType: `-- Opção segura:
+	lockmapper.PatternAlterColumnType: `-- Safe alternative:
 ALTER TABLE t ADD COLUMN col_new NEW_TYPE;
--- Sincronize com trigger durante transição
--- Migre código para usar col_new
--- DROP COLUMN col_old em deploy futuro`,
+-- Sync with a trigger during the transition
+-- Migrate code to use col_new
+-- DROP COLUMN col_old in a future deploy`,
 
-	lockmapper.PatternTruncate: `-- Opção segura:
+	lockmapper.PatternTruncate: `-- Safe alternative:
 SET lock_timeout = '2s';
-DELETE FROM t WHERE created_at < now() - interval '1 year';  -- com lock_timeout
--- Ou, se precisar de TRUNCATE:
-TRUNCATE t CASCADE;  -- documente as tabelas afetadas explicitamente`,
+DELETE FROM t WHERE created_at < now() - interval '1 year';  -- with lock_timeout
+-- Or, if TRUNCATE is required:
+TRUNCATE t CASCADE;  -- explicitly document the affected tables`,
 
-	lockmapper.PatternNoTimeout: `-- Adicione no início da migration:
+	lockmapper.PatternNoTimeout: `-- Add at the beginning of the migration:
 SET lock_timeout = '3s';
 SET statement_timeout = '30s';
--- Ou use: pgloop apply migration.sql  (injeta automaticamente)`,
+-- Or use: pgloop apply migration.sql  (injects them automatically)`,
 
-	lockmapper.PatternMultipleExclusive: `-- Quebre em migrations separadas:
+	lockmapper.PatternMultipleExclusive: `-- Split into separate migrations:
 -- migration_001_add_column.sql
 -- migration_002_create_index.sql
--- Execute com deploys graduais para reduzir janela de risco`,
+-- Deploy gradually to reduce the risk window`,
 }
 
 func Suggestion(pattern lockmapper.PatternID) string {

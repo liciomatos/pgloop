@@ -1,5 +1,5 @@
--- Migration de exemplo: adiciona coluna de status, índice e constraint
--- Escrita da forma "óbvia" — mas cheia de armadilhas em produção
+-- Example migration: adds a status column, index, and constraint
+-- Written the "obvious" way — but full of traps in production
 
 ALTER TABLE orders ADD COLUMN status TEXT DEFAULT 'pending';
 
