@@ -178,15 +178,76 @@ ALTER TABLE users DROP CONSTRAINT chk_email_nn;
 
 ## Configuration
 
-Create `.pgloop.yaml` in the project root or at `~/.config/pgloop/.pgloop.yaml`:
+pgloop reads a config file automatically — no flag required. It searches in two locations, in order:
+
+1. `.pgloop.yaml` in the **current working directory** (project-level config, commit to your repo)
+2. `~/.config/pgloop/.pgloop.yaml` (user-level config, applies to all projects)
+
+CLI flags always take precedence over the config file, so you can override any setting per-run.
+
+### Full reference
 
 ```yaml
 lint:
-  pg_version: 14        # target PostgreSQL major version (affects P1 diagnosis)
-  fail_on: CRITICAL     # CRITICAL or WARN
-  suggestions: true     # show safe rewrite recipes in terminal output
-  ignore: []            # e.g. [P9] to suppress timeout warnings globally
+  # Target PostgreSQL major version.
+  # Affects how certain patterns are classified — most notably P1:
+  #   - PG10 or earlier: ADD COLUMN with DEFAULT is CRITICAL (full table rewrite)
+  #   - PG11+:           ADD COLUMN with DEFAULT is WARN   (fast column add, no rewrite)
+  # Set this to match the PostgreSQL version you deploy against.
+  # Default: 0 (unspecified — conservative mode, assumes PG10)
+  pg_version: 14
+
+  # Minimum risk level that causes pgloop to exit with code 2.
+  # CRITICAL  → only critical issues fail the build (default)
+  # WARN      → any issue (including warnings) fails the build
+  # Default: CRITICAL
+  fail_on: CRITICAL
+
+  # Show safe rewrite recipes after each issue in terminal output.
+  # Set to false for compact output (useful in scripts or log pipelines).
+  # Only affects the terminal format; JSON and github always include suggestions.
+  # Default: true
+  suggestions: true
+
+  # Suppress specific patterns globally.
+  # Accepts a list of pattern codes (P1–P10).
+  # Useful when a pattern is intentionally accepted across your entire project
+  # (e.g. P9 if your deploy tool already injects lock_timeout automatically).
+  # Default: []
+  ignore: []
 ```
+
+### Common setups
+
+**PG14 project, fail on any issue:**
+```yaml
+lint:
+  pg_version: 14
+  fail_on: WARN
+```
+
+**Suppress timeout warning — deploy tool handles it:**
+```yaml
+lint:
+  pg_version: 15
+  ignore: [P9]
+```
+
+**Compact CI output without suggestions:**
+```yaml
+lint:
+  suggestions: false
+  fail_on: CRITICAL
+```
+
+### Parameter reference
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `lint.pg_version` | integer | `0` | Target PostgreSQL major version. `0` = unspecified (assumes PG10). |
+| `lint.fail_on` | string | `CRITICAL` | Exit code 2 threshold: `CRITICAL` or `WARN`. |
+| `lint.suggestions` | bool | `true` | Show rewrite recipes in terminal output. |
+| `lint.ignore` | list | `[]` | Pattern codes to suppress (e.g. `[P9, P10]`). |
 
 CLI flags always take precedence over the config file.
 
