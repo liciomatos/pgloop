@@ -1,0 +1,50 @@
+version: 2
+
+project_name: pgloop
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: linux-amd64
+    goos: [linux]
+    goarch: [amd64]
+    env: [CGO_ENABLED=1]
+    ldflags: ["-X main.version={{.Version}}"]
+
+  - id: linux-arm64
+    goos: [linux]
+    goarch: [arm64]
+    env:
+      - CGO_ENABLED=1
+      - CC=aarch64-linux-gnu-gcc
+    ldflags: ["-X main.version={{.Version}}"]
+
+  - id: darwin-amd64
+    goos: [darwin]
+    goarch: [amd64]
+    env: [CGO_ENABLED=1]
+    ldflags: ["-X main.version={{.Version}}"]
+
+  - id: darwin-arm64
+    goos: [darwin]
+    goarch: [arm64]
+    env: [CGO_ENABLED=1]
+    ldflags: ["-X main.version={{.Version}}"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [README.md, LICENSE]
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

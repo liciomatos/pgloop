@@ -1,0 +1,8 @@
+# .pgloop.yaml — coloque na raiz do projeto ou em ~/.config/pgloop/.pgloop.yaml
+# Flags da CLI sempre sobrescrevem o arquivo de config.
+
+lint:
+  pg_version: 14        # versão major do PostgreSQL alvo (afeta diagnóstico do P1)
+  fail_on: CRITICAL     # CRITICAL ou WARN
+  suggestions: true     # exibe receitas de reescrita no terminal
+  ignore: []            # ex: [P9] para projetos que já controlam timeout via deploy tool

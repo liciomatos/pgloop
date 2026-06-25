@@ -1,0 +1,20 @@
+# binary
+pgloop
+dist/
+
+# go
+*.test
+*.out
+vendor/
+
+# goreleaser
+dist/
+
+# editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# config local (nunca commitar credenciais)
+.pgloop.yaml

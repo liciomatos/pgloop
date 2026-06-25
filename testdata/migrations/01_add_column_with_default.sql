@@ -1,0 +1,2 @@
+-- CRITICAL: ADD COLUMN com DEFAULT não-volátil
+ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';

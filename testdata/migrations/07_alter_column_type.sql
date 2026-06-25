@@ -1,0 +1,3 @@
+-- CRITICAL: ALTER COLUMN TYPE
+SET lock_timeout = '3s';
+ALTER TABLE orders ALTER COLUMN amount TYPE NUMERIC(12,2);
