@@ -377,6 +377,8 @@ lint:
 
 ## GitHub Actions
 
+The easiest way to add pgloop to CI is via **[pgloop-lint-action](https://github.com/liciomatos/pgloop-lint-action)** — no Go, no Docker, no setup required.
+
 ```yaml
 # .github/workflows/db-lint.yml
 name: pgloop lint
@@ -389,6 +391,20 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: liciomatos/pgloop-lint-action@v1
+        with:
+          paths: migrations/
+```
+
+The action downloads the prebuilt binary, runs the linter, and posts inline annotations directly in the PR diff. See the [action README](https://github.com/liciomatos/pgloop-lint-action) for all inputs (`fail-on`, `ignore`, `pg-version`) and outputs (`critical`, `warn`, `exit-code`).
+
+### Manual setup (without the action)
+
+If you prefer to run pgloop directly:
+
+```yaml
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
