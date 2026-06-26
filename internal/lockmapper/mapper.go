@@ -34,6 +34,8 @@ const (
 	PatternTruncate                  PatternID = 8
 	PatternNoTimeout                 PatternID = 9
 	PatternMultipleExclusive         PatternID = 10
+	PatternDropIndexNoConcurrently   PatternID = 11
+	PatternLockTable                 PatternID = 12
 )
 
 // AnalyzeOptions controls analysis behavior.
@@ -66,6 +68,8 @@ func AllPatterns() []PatternInfo {
 		{PatternTruncate, "P8", "TRUNCATE", LockAccessExclusive, RiskCritical, ""},
 		{PatternNoTimeout, "P9", "Migration without lock_timeout / statement_timeout", LockNone, RiskWarn, ""},
 		{PatternMultipleExclusive, "P10", "Multiple ACCESS EXCLUSIVE operations in the same migration", LockAccessExclusive, RiskWarn, ""},
+		{PatternDropIndexNoConcurrently, "P11", "DROP INDEX without CONCURRENTLY", LockAccessExclusive, RiskCritical, ""},
+		{PatternLockTable, "P12", "LOCK TABLE explicit", LockAccessExclusive, RiskCritical, ""},
 	}
 }
 
@@ -150,6 +154,22 @@ func analyzeStatement(stmt parser.Statement, fullSQL string, opts AnalyzeOptions
 			Risk:      RiskCritical,
 			Pattern:   PatternTruncate,
 			Message:   "TRUNCATE acquires ACCESS EXCLUSIVE. Prefer DELETE with lock_timeout or explicit TRUNCATE ... CASCADE.",
+			Line:      line,
+		}}
+	}
+	if drop := node.GetDropStmt(); drop != nil {
+		if result := analyzeDropIndex(drop, stmt.Raw, line); result != nil {
+			return []LintResult{*result}
+		}
+		return nil
+	}
+	if node.GetLockStmt() != nil {
+		return []LintResult{{
+			Statement: stmt.Raw,
+			LockMode:  LockAccessExclusive,
+			Risk:      RiskCritical,
+			Pattern:   PatternLockTable,
+			Message:   "Explicit LOCK TABLE holds the lock for the entire transaction. Avoid in migrations; prefer advisory locks or redesign the flow.",
 			Line:      line,
 		}}
 	}
@@ -251,6 +271,20 @@ func addColumnWithDefaultResult(raw string, line int, pgVersion int) *LintResult
 			Line:      line,
 		}
 	}
+}
+
+func analyzeDropIndex(drop *pg_query.DropStmt, raw string, line int) *LintResult {
+	if drop.RemoveType == pg_query.ObjectType_OBJECT_INDEX && !drop.Concurrent {
+		return &LintResult{
+			Statement: raw,
+			LockMode:  LockAccessExclusive,
+			Risk:      RiskCritical,
+			Pattern:   PatternDropIndexNoConcurrently,
+			Message:   "DROP INDEX without CONCURRENTLY acquires ACCESS EXCLUSIVE, blocking reads and writes during the drop. Use DROP INDEX CONCURRENTLY.",
+			Line:      line,
+		}
+	}
+	return nil
 }
 
 func analyzeCreateIndex(index *pg_query.IndexStmt, raw string, line int) *LintResult {

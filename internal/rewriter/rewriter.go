@@ -55,6 +55,16 @@ SET statement_timeout = '30s';
 -- migration_001_add_column.sql
 -- migration_002_create_index.sql
 -- Deploy gradually to reduce the risk window`,
+
+	lockmapper.PatternDropIndexNoConcurrently: `-- Safe alternative:
+DROP INDEX CONCURRENTLY idx_name;
+-- Restrictions: cannot run inside BEGIN/COMMIT; does not support CASCADE.
+-- For indexes backing UNIQUE or PRIMARY KEY constraints, drop the constraint instead:
+ALTER TABLE t DROP CONSTRAINT constraint_name;  -- drops the index automatically`,
+
+	lockmapper.PatternLockTable: `-- Avoid LOCK TABLE in migrations.
+-- If serialization is needed, consider pg advisory locks:
+SELECT pg_advisory_xact_lock(hashtext('my_migration_lock'));`,
 }
 
 func Suggestion(pattern lockmapper.PatternID) string {

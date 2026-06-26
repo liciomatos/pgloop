@@ -59,6 +59,14 @@ var patternCases = []patternCase{
 		file: "10_multiple_exclusive.sql", opts: defaultOpts,
 		wantPattern: lockmapper.PatternMultipleExclusive, wantRisk: lockmapper.RiskWarn, wantMinIssues: 1,
 	},
+	{
+		file: "11_drop_index_no_concurrently.sql", opts: defaultOpts,
+		wantPattern: lockmapper.PatternDropIndexNoConcurrently, wantRisk: lockmapper.RiskCritical, wantMinIssues: 1,
+	},
+	{
+		file: "12_lock_table.sql", opts: defaultOpts,
+		wantPattern: lockmapper.PatternLockTable, wantRisk: lockmapper.RiskCritical, wantMinIssues: 1,
+	},
 	// P1 — ADD COLUMN with DEFAULT: behavior changes by PG version
 	{
 		file: "01_add_column_with_default.sql", opts: lockmapper.AnalyzeOptions{PGVersion: 0},
@@ -116,6 +124,7 @@ var safeCases = []string{
 	"safe_add_column.sql",
 	"safe_create_index_concurrently.sql",
 	"safe_add_constraint_not_valid.sql",
+	"safe_drop_index_concurrently.sql",
 }
 
 func TestSafeMigrationsNoFalsePositives(t *testing.T) {
