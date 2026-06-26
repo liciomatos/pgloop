@@ -1,0 +1,3 @@
+-- OK: DROP INDEX CONCURRENTLY (no ACCESS EXCLUSIVE)
+SET lock_timeout = '3s';
+DROP INDEX CONCURRENTLY idx_orders_user_id;
